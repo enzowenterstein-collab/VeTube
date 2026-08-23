@@ -85,6 +85,68 @@ class PrismBackendWrapper:
             pass
 
 
+class RespaldoPuente(PrismBackendWrapper):
+    """Respaldo momentáneo cuando el motor elegido necesita un servidor que no
+    está en el equipo (sonata sin descargar). Habla por prism, pero además
+    absorbe la API propia de los puentes (load_model, set_device, is_playing…)
+    para que el código que cree estar hablando con Piper no reviente: esas
+    llamadas no tienen nada que hacer sin servidor, así que no hacen nada.
+
+    Es un respaldo del instante, no un cambio de configuración (decisión de
+    César, 2026-08-16): config['sistemaTTS'] no se toca, y en cuanto el motor
+    se descarga, el siguiente configurar_tts levanta el puente de verdad."""
+
+    def load_model(self, model_path=None):
+        pass
+
+    def unload_model(self):
+        pass
+
+    def set_device(self, device):
+        pass
+
+    def find_device_id(self, term, known_devices=None):
+        return -1
+
+    def get_devices(self):
+        return []
+
+    def is_playing(self):
+        # Para el botón «Detener prueba» de los Ajustes: aquí quien habla es el
+        # backend de prism, que sí sabe decir si sigue en ello.
+        try:
+            return bool(self.backend.speaking)
+        except Exception:
+            return False
+
+    def set_rate(self, value):
+        # Quien le habla a un lector «piper» pre-escala la velocidad con
+        # porcentaje_a_escala (0 a 2,5, con 1,25 en el centro), no con el
+        # -10..10 que espera PrismBackendWrapper: hay que deshacer esa escala,
+        # o el cursor de velocidad quedaría casi inerte en la voz de respaldo.
+        try:
+            self.backend.rate = max(0.0, min(1.0, float(value) / 2.5))
+        except Exception:
+            pass
+
+    def piperSpeak(self, model_path):
+        # _cargar_voz_piper_actual reasigna reader._lector con el resultado de
+        # esta llamada: devolverse a sí mismo mantiene el respaldo en su sitio.
+        return self
+
+
+def crear_respaldo_puente():
+    """El respaldo momentáneo, con la misma cadena de recambios que la voz
+    secundaria de avisos: SAPI, luego OneCore, luego el mejor disponible."""
+    try:
+        return RespaldoPuente(BackendId.SAPI)
+    except Exception:
+        try:
+            return RespaldoPuente(BackendId.ONE_CORE)
+        except Exception:
+            return RespaldoPuente(is_best=True)
+
+
 class ReaderHandler:
     def __init__(self, lector=None):
         sistema = motor_de_interfaz() if lector is None else lector

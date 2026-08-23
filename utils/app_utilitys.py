@@ -63,6 +63,36 @@ def _cargar_voz_piper_actual():
     fijar_dispositivo_lector()
 
 
+def asegurar_motor_sonata(parent):
+    """True si el motor sonata (el servidor de las voces Piper) está en el
+    equipo, ofreciendo descargarlo si falta. Lo llaman el arranque con Piper
+    elegido y la prueba de voz de los Ajustes; el Aceptar de los Ajustes abre
+    el descargador directamente, como el de Kokoro. Mientras el motor falte,
+    el chat habla por el respaldo SAPI del instante (ver configurar_tts)."""
+    from TTS.sonata_handler import sonata_instalado
+
+    if sonata_instalado():
+        return True
+    if (
+        response(
+            _(
+                "Las voces Piper necesitan su motor de voz, que aún no está en este equipo. ¿Deseas descargarlo ahora? Mientras tanto te acompañará una voz del sistema."
+            ),
+            _("Falta el motor de las voces Piper"),
+            wx.YES_NO | wx.ICON_ASTERISK,
+        )
+        == wx.ID_YES
+    ):
+        # Import diferido: este módulo se importa desde setup y el controlador
+        # del descargador importa setup a su vez.
+        from controller.sonata_downloader_controller import (
+            SonataDownloaderController,
+        )
+
+        SonataDownloaderController(parent).show()
+    return sonata_instalado()
+
+
 def configurar_piper(parent, carpeta_voces):
     onnx_models = detect_onnx_models(carpeta_voces)
     if onnx_models is None:
@@ -84,7 +114,13 @@ def configurar_piper(parent, carpeta_voces):
                 lista_voces_piper.extend(piper_list_voices())
                 config["voz"] = 0
                 _cargar_voz_piper_actual()
-                reader.leer_motor(_("Lector Piper inicializado correctamente."))
+                # Solo si el motor sonata está de verdad: sin él quien habla es
+                # el respaldo SAPI, y esta frase mentiría en su boca (regla de
+                # leer_motor: quien llama comprueba el motor antes de anunciar).
+                from TTS.sonata_handler import sonata_instalado
+
+                if sonata_instalado():
+                    reader.leer_motor(_("Lector Piper inicializado correctamente."))
     elif isinstance(onnx_models, str) or isinstance(onnx_models, list):
         # Solo se recoloca la voz si el índice guardado quedó fuera de rango:
         # resetearla siempre hacía perder la voz elegida en cada Aceptar.

@@ -3,6 +3,7 @@ import asyncio
 import wx
 
 from controller.kokoro_downloader_controller import KokoroDownloaderController
+from controller.sonata_downloader_controller import SonataDownloaderController
 from controller.update_languages_controller import UpdateLanguagesController
 from exchange import codes as currency_codes
 from globals import data_store
@@ -10,6 +11,7 @@ from globals.resources import carpeta_voces, codes, codigos_traduccion
 from servicios.language_updater import GestorRepositorios
 from setup import reader
 from TTS.sherpa_handler import kokoro_model_instalado
+from TTS.sonata_handler import sonata_instalado
 from ui.ajustes import configuracionDialog
 from ui.dialog_response import response
 from ui.menus.main_menu import MainMenu
@@ -100,6 +102,16 @@ class MainMenuController:
             and not kokoro_model_instalado()
         ):
             KokoroDownloaderController(self.frame).show()
+        # Lo mismo con Piper y su motor (pedido de César, 2026-08-16): al
+        # Aceptar con Piper elegido y sin el motor sonata en el equipo, ofrecer
+        # la descarga en el acto. Mientras tanto habla el respaldo SAPI del
+        # instante, así que el usuario no se queda mudo aunque diga que no.
+        if (
+            resultado == wx.ID_OK
+            and data_store.motor_de_interfaz() == "piper"
+            and not sonata_instalado()
+        ):
+            SonataDownloaderController(self.frame).show()
 
     def restaurar(self, event):
         if (

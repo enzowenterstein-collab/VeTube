@@ -5,7 +5,7 @@ from logging import getLogger
 
 from prism import BackendId
 
-from helpers.reader_handler import PrismBackendWrapper
+from helpers.reader_handler import PrismBackendWrapper, crear_respaldo_puente
 
 from . import edge_handler, sherpa_handler, sonata_handler
 
@@ -45,6 +45,17 @@ def configurar_tts(lector):
     elif lector == "onecore":
         return PrismBackendWrapper(BackendId.ONE_CORE)
     elif lector == "piper":
+        if not sonata_handler.sonata_instalado():
+            # Sin el motor sonata en el equipo (las instalaciones nuevas ya no
+            # lo traen: se descarga desde la release «motores»), levantar el
+            # puente dejaría al usuario mudo sin explicación. Respaldo SAPI del
+            # instante, sin tocar config['sistemaTTS']: en cuanto el descargador
+            # lo instala, el siguiente set_tts levanta el puente de verdad.
+            logger.warning(
+                "El motor sonata no está instalado: las voces Piper hablarán "
+                "por el respaldo SAPI hasta que se descargue."
+            )
+            return crear_respaldo_puente()
         return sonata_handler.piperSpeak()
     elif lector == "kokoro":
         return sherpa_handler.sherpaSpeak()
