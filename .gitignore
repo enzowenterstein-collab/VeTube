@@ -6,6 +6,9 @@ __pycache__/
 voices/*
 voices/*/*.onnx
 voices/*/*.onnx.json
+# Motores descargados a demanda (engines/sonata): binarios junto al ejecutable,
+# como voices/. Anclado a la raíz para no ignorar un engines/ de otro sitio.
+/engines/
 data.json
 languages.json
 venv/

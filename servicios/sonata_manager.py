@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import shutil
 import tarfile
@@ -7,27 +8,36 @@ from logging import getLogger
 
 import httpx
 
-from globals.paths import VOICES_DIR
+from globals.paths import ENGINES_DIR
 
 from .base_downloader import BaseDownloader
 
 logger = getLogger(__name__)
 
-# Modelo Kokoro empaquetado por k2-fsa (release tts-models de sherpa-onnx).
-# Un único paquete con las 53 voces de todos los idiomas: se descarga una vez.
-KOKORO_MODEL_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2"
-CARPETA_MODELO = "kokoro-multi-lang-v1_0"
-# Tamaños de esta versión concreta del paquete, para la barra de progreso y el
-# aviso de espacio en disco (si el servidor no informa content-length).
-TAMANO_DESCARGA = 349418188
-TAMANO_EXTRAIDO = 400786089
-# Ficheros que deben existir tras extraer para dar la instalación por buena.
-FICHEROS_CLAVE = ("model.onnx", "voices.bin", "tokens.txt")
+# Motor sonata (servidor gRPC de las voces Piper) empaquetado en la release
+# fija «motores» de VeTube: mismo esquema que el modelo Kokoro con la release
+# tts-models de k2-fsa. Etiqueta fija y no «latest» para que la URL no cambie
+# nunca, y en .tar.bz2 por simetría con el paquete Kokoro.
+SONATA_MOTOR_URL = "https://github.com/metalalchemist/VeTube/releases/download/motores/sonata-x64.tar.bz2"
+SONATA_SHA256_URL = SONATA_MOTOR_URL + ".sha256"
+# El paquete se genera con `tar -C .../64 sonata`, así que sus miembros cuelgan
+# de esta carpeta y es la que se muda entera a engines/ al final.
+CARPETA_MOTOR = "sonata"
+# Tamaños medidos de esta versión del paquete (la release fija no cambia), para
+# la barra de progreso y el aviso de espacio en disco.
+TAMANO_DESCARGA = 20539335
+TAMANO_EXTRAIDO = 49331043
+# Lo mínimo que debe existir tras extraer para dar la instalación por buena: el
+# servidor y sus datos de fonemización (espeak-ng-data va DENTRO del paquete).
+FICHERO_CLAVE = "sonata-grpc.exe"
+CARPETA_CLAVE = "espeak-ng-data"
 
 
-class KokoroManager(BaseDownloader):
-    """Descarga e instala el modelo Kokoro en voices/, con progreso 0-100:
-    0-90 descarga, 90-99 extracción, 100 instalado. Cancelable en todo momento."""
+class SonataManager(BaseDownloader):
+    """Descarga e instala el motor sonata en engines/, con progreso 0-100:
+    0-90 descarga, 90-99 extracción, 100 instalado. Cancelable en todo momento.
+    Mismo esquema que KokoroManager; además verifica la firma SHA-256 que
+    acompaña al paquete en la release."""
 
     def __init__(self):
         super().__init__()
@@ -39,17 +49,17 @@ class KokoroManager(BaseDownloader):
         self.cancelado = True
 
     def destino_final(self):
-        return str(VOICES_DIR / CARPETA_MODELO)
+        return str(ENGINES_DIR / CARPETA_MOTOR)
 
     def hay_espacio_suficiente(self, temp_dir):
         """Comprueba el espacio libre antes de empezar: el paquete y su
-        extracción conviven en el temporal antes de mudarse a voices/."""
+        extracción conviven en el temporal antes de mudarse a engines/."""
         try:
             libre_temp = shutil.disk_usage(temp_dir).free
-            # El disco del destino real (voices/ vive junto al ejecutable),
+            # El disco del destino real (engines/ vive junto al ejecutable),
             # no el directorio de trabajo: el cwd del proceso puede estar en
             # otro disco (accesos directos, relanzamientos del actualizador).
-            libre_destino = shutil.disk_usage(str(VOICES_DIR.parent)).free
+            libre_destino = shutil.disk_usage(str(ENGINES_DIR.parent)).free
         except Exception:
             return True  # Si no se puede medir, dejamos que lo intente
         return (
@@ -57,16 +67,17 @@ class KokoroManager(BaseDownloader):
             and libre_destino > TAMANO_EXTRAIDO
         )
 
-    async def instalar_modelo(self, progress_callback=None):
-        """Descarga el paquete, lo extrae en un temporal y lo mueve a voices/.
-        Devuelve {'success': bool, 'cancelado': bool, 'data': detalle}.
+    async def instalar_motor(self, progress_callback=None):
+        """Descarga el paquete, lo verifica, lo extrae en un temporal y lo
+        mueve a engines/. Devuelve {'success': bool, 'cancelado': bool,
+        'data': detalle}.
 
         La bandera de cancelación NO se reinicia aquí: esta corrutina empieza a
         correr cuando el bucle de red le hace sitio, y quien cancele entre medias
         (el bucle también atiende los chats) se habría quedado sin efecto. La
         reinicia quien lanza la descarga, antes de encolarla."""
-        temp_dir = tempfile.mkdtemp(prefix="vetube_kokoro_")
-        tar_path = os.path.join(temp_dir, CARPETA_MODELO + ".tar.bz2")
+        temp_dir = tempfile.mkdtemp(prefix="vetube_sonata_")
+        tar_path = os.path.join(temp_dir, CARPETA_MOTOR + ".tar.bz2")
         try:
             if not self.hay_espacio_suficiente(temp_dir):
                 necesario_mb = (TAMANO_DESCARGA + TAMANO_EXTRAIDO) // (1024 * 1024)
@@ -79,17 +90,27 @@ class KokoroManager(BaseDownloader):
                     % necesario_mb,
                 }
 
-            res = await self._descargar(KOKORO_MODEL_URL, tar_path, progress_callback)
+            res = await self._descargar(SONATA_MOTOR_URL, tar_path, progress_callback)
             if not res["success"]:
                 return res
 
-            # La extracción de un .tar.bz2 grande tarda: fuera del bucle de red,
+            firma = await self._descargar_firma()
+            # La firma pudo interrumpirse por cancelación: el contrato es
+            # «cancelable en todo momento», también en esta etapa intermedia.
+            if self.cancelado:
+                return {"success": False, "cancelado": True, "data": ""}
+
+            # La verificación y la extracción tardan: fuera del bucle de red,
             # que mientras tanto sigue atendiendo los chats.
             return await asyncio.to_thread(
-                self._extraer_e_instalar, tar_path, temp_dir, progress_callback
+                self._verificar_extraer_e_instalar,
+                tar_path,
+                temp_dir,
+                firma,
+                progress_callback,
             )
         except Exception as e:
-            logger.error("Fallo al instalar el modelo Kokoro", exc_info=True)
+            logger.error("Fallo al instalar el motor sonata", exc_info=True)
             return {"success": False, "cancelado": False, "data": str(e)}
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -124,25 +145,82 @@ class KokoroManager(BaseDownloader):
             }
         return {"success": res["success"], "cancelado": False, "data": res["data"]}
 
-    def _extraer_e_instalar(self, tar_path, temp_dir, progress_callback):
-        """Corre en un hilo aparte. Extrae en el temporal, verifica y mueve la
-        carpeta completa a voices/ (así nunca queda una instalación a medias)."""
+    async def _descargar_firma(self):
+        """La firma SHA-256 publicada junto al paquete (formato «hash *nombre»).
+        Devuelve el hash en minúsculas, o None si no se pudo obtener: la firma
+        protege de una descarga corrupta, pero su ausencia momentánea no debe
+        impedir instalar el motor (mismo criterio que el paquete Kokoro, que no
+        tiene firma ninguna)."""
+        from utils.network import network_manager as network
+
+        try:
+            # Como tarea vigilada y no como await directo: la bandera de
+            # cancelación debe seguir mandando también aquí («cancelable en
+            # todo momento»); un await directo la ignoraría hasta 30 segundos.
+            tarea = asyncio.ensure_future(
+                network.client.get(
+                    SONATA_SHA256_URL,
+                    follow_redirects=True,
+                    timeout=httpx.Timeout(30.0, connect=15.0),
+                )
+            )
+            while not tarea.done():
+                if self.cancelado:
+                    tarea.cancel()
+                    return None
+                await asyncio.sleep(0.2)
+            respuesta = tarea.result()
+            if respuesta.status_code != 200:
+                logger.warning(
+                    "HTTP %s al descargar la firma del motor sonata; se instala sin verificar",
+                    respuesta.status_code,
+                )
+                return None
+            return respuesta.text.split()[0].strip().lower()
+        except Exception:
+            logger.warning(
+                "No se pudo descargar la firma del motor sonata; se instala sin verificar",
+                exc_info=True,
+            )
+            return None
+
+    def _verificar_extraer_e_instalar(self, tar_path, temp_dir, firma, progress_callback):
+        """Corre en un hilo aparte. Verifica la firma, extrae en el temporal,
+        comprueba y mueve la carpeta completa a engines/ (así nunca queda una
+        instalación a medias)."""
+        if firma:
+            sha = hashlib.sha256()
+            with open(tar_path, "rb") as f:
+                while True:
+                    if self.cancelado:
+                        return {"success": False, "cancelado": True, "data": ""}
+                    bloque = f.read(1024 * 1024)
+                    if not bloque:
+                        break
+                    sha.update(bloque)
+            if sha.hexdigest().lower() != firma:
+                return {
+                    "success": False,
+                    "cancelado": False,
+                    "data": _(
+                        "el paquete descargado no supera la comprobación de integridad. Inténtalo de nuevo."
+                    ),
+                }
+
         dir_extraccion = os.path.join(temp_dir, "extraido")
         extraido = 0
         ultimo_avance = -1
-        # Iteración en streaming: una sola pasada de descompresión. Pedir la
-        # lista de miembros por adelantado obligaría a descomprimir dos veces.
-        # Los ficheros se copian por bloques (no con tar.extract) para que el
-        # progreso avance DENTRO del model.onnx de 310 MB: sin esto la barra se
-        # congela ~15 segundos, que en un lector de pantalla suena a cuelgue,
-        # y la cancelación tampoco respondería durante ese fichero.
+        # Iteración en streaming: una sola pasada de descompresión, con los
+        # ficheros copiados por bloques para que la barra avance también dentro
+        # del ejecutable de 26 MB y la cancelación siga respondiendo (mismo
+        # esquema, y mismas razones, que el instalador de Kokoro).
         with tarfile.open(tar_path, "r:bz2") as tar:
             for miembro in tar:
                 if self.cancelado:
                     return {"success": False, "cancelado": True, "data": ""}
                 if not self._miembro_seguro(miembro):
                     logger.warning(
-                        "Miembro sospechoso ignorado en el paquete Kokoro: %s",
+                        "Miembro sospechoso ignorado en el paquete sonata: %s",
                         miembro.name,
                     )
                     continue
@@ -170,27 +248,26 @@ class KokoroManager(BaseDownloader):
                             ultimo_avance = avance
                             progress_callback(avance)
 
-        origen = os.path.join(dir_extraccion, CARPETA_MODELO)
-        for fichero in FICHEROS_CLAVE:
-            if not os.path.isfile(os.path.join(origen, fichero)):
-                return {
-                    "success": False,
-                    "cancelado": False,
-                    "data": _("El paquete descargado está incompleto (falta %s).")
-                    % fichero,
-                }
-        if not os.path.isdir(os.path.join(origen, "espeak-ng-data")):
+        origen = os.path.join(dir_extraccion, CARPETA_MOTOR)
+        if not os.path.isfile(os.path.join(origen, FICHERO_CLAVE)):
             return {
                 "success": False,
                 "cancelado": False,
                 "data": _("El paquete descargado está incompleto (falta %s).")
-                % "espeak-ng-data",
+                % FICHERO_CLAVE,
+            }
+        if not os.path.isdir(os.path.join(origen, CARPETA_CLAVE)):
+            return {
+                "success": False,
+                "cancelado": False,
+                "data": _("El paquete descargado está incompleto (falta %s).")
+                % CARPETA_CLAVE,
             }
 
         destino = self.destino_final()
         if os.path.isdir(destino):
             shutil.rmtree(destino)
-        self.ensure_dir("voices")
+        self.ensure_dir(str(ENGINES_DIR))
         shutil.move(origen, destino)
         if progress_callback:
             progress_callback(100)

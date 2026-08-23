@@ -27,7 +27,7 @@ from ui.dialog_response import response
 from ui.main_window import PLATAFORMAS, MyFrame
 from update import updater
 from utils import canonical_scraper, fajustes, funciones, languageHandler
-from utils.app_utilitys import configurar_piper
+from utils.app_utilitys import asegurar_motor_sonata, configurar_piper
 from utils.network import network_manager as network
 
 
@@ -44,8 +44,12 @@ class MainController:
         wx.CallAfter(self.iniciar_secuencia_arranque)
 
     def iniciar_secuencia_arranque(self):
-        # 1. Verificar e instalar voces si es necesario
+        # 1. Verificar e instalar el motor y las voces si es necesario. El
+        # motor primero: sin sonata las voces Piper no pueden sonar (las
+        # instalaciones nuevas ya no lo traen en el build), y hasta que esté
+        # descargado el chat habla por el respaldo SAPI del instante.
         if motor_de_interfaz() == "piper":
+            asegurar_motor_sonata(self.frame)
             configurar_piper(self.frame, carpeta_voces)
         # 2. Comprobar actualizaciones en segundo plano de forma segura
         if config.get("updates", False):

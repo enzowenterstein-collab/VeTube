@@ -2109,3 +2109,39 @@ msgstr "Le serveur des langues a répondu avec l'erreur HTTP %d. Réessayez plus
 #, python-format
 msgid "No hay una versión compatible disponible para el canal %s. El canal Stable puede no tener una versión compatible; el canal Beta también puede incluir versiones preliminares."
 msgstr "Aucune version compatible n'est disponible pour le canal %s. Le canal Stable peut ne pas avoir de version compatible ; le canal Beta peut aussi inclure des préversions."
+
+#: ui/sonata_downloader.py:12
+msgid "Instalar el motor de las voces Piper"
+msgstr "Installer le moteur des voix Piper"
+
+#: ui/sonata_downloader.py:21
+msgid "Las voces Piper necesitan el motor sonata para poder sonar. Se descarga una sola vez y ocupa %d MB aproximadamente."
+msgstr "Les voix Piper ont besoin du moteur sonata pour pouvoir parler. Il se télécharge une seule fois et occupe environ %d Mo."
+
+#: controller/sonata_downloader_controller.py:30
+msgid "El motor de las voces Piper ya está instalado en este equipo."
+msgstr "Le moteur des voix Piper est déjà installé sur cet ordinateur."
+
+#: controller/sonata_downloader_controller.py:50
+msgid "Descargando el motor de voz..."
+msgstr "Téléchargement du moteur de voix..."
+
+#: controller/sonata_downloader_controller.py:81
+msgid "El motor de las voces Piper se ha instalado correctamente. Los mensajes ya pueden sonar con la voz elegida."
+msgstr "Le moteur des voix Piper a été installé correctement. Les messages peuvent désormais être lus avec la voix choisie."
+
+#: controller/sonata_downloader_controller.py:95
+msgid "No se pudo instalar el motor de las voces Piper: %s"
+msgstr "Impossible d'installer le moteur des voix Piper : %s"
+
+#: servicios/sonata_manager.py:188
+msgid "el paquete descargado no supera la comprobación de integridad. Inténtalo de nuevo."
+msgstr "le paquet téléchargé n'a pas passé la vérification d'intégrité. Réessayez."
+
+#: utils/app_utilitys.py:79
+msgid "Las voces Piper necesitan su motor de voz, que aún no está en este equipo. ¿Deseas descargarlo ahora? Mientras tanto te acompañará una voz del sistema."
+msgstr "Les voix Piper ont besoin de leur moteur de voix, qui n'est pas encore sur cet ordinateur. Voulez-vous le télécharger maintenant ? En attendant, une voix du système vous accompagnera."
+
+#: utils/app_utilitys.py:81
+msgid "Falta el motor de las voces Piper"
+msgstr "Le moteur des voix Piper est manquant"

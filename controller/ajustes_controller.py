@@ -732,6 +732,15 @@ class AjustesController:
             # chat, que con la casilla marcada es la SAPI secundaria.
             reader._leer.silence()
         elif config["sistemaTTS"] in ("piper", "kokoro"):
+            if config["sistemaTTS"] == "piper" and not app_utilitys.asegurar_motor_sonata(
+                self.dialog
+            ):
+                # Sin el motor sonata la síntesis no arranca nunca: mismo
+                # patrón que con el paquete de Kokoro, ofrecer la descarga ahí
+                # mismo. Si el usuario la acepta y termina bien, el descargador
+                # deja el puente levantado con su voz cargada y la prueba
+                # sigue su curso normal.
+                return
             if (
                 config["sistemaTTS"] == "kokoro"
                 and kokoro_voice_config(config["voz"]) is None

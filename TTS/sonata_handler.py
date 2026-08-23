@@ -12,7 +12,7 @@ import grpclib.const
 from grpclib.client import Channel
 from sound_lib import stream
 
-from globals.paths import VOICES_DIR
+from globals.paths import ENGINES_DIR, VOICES_DIR
 
 # Configuración de Job Objects para Windows
 if sys.platform == "win32":
@@ -53,6 +53,32 @@ _INSTANCIA_PIPER = None
 # El barrido de procesos huérfanos solo hace falta una vez por sesión.
 _ORFANOS_LIMPIADOS = False
 
+NOMBRE_EXE_SONATA = "sonata-grpc.exe"
+# Carpeta clásica, resuelta respecto a este módulo: en la app compilada cae en
+# lib/64/sonata, y funciona porque el build copia 64/ también a lib/64/.
+_BIN_EMPAQUETADO = (
+    Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "64" / "sonata"
+)
+# Carpeta del motor descargado: al lado del ejecutable (como voices/), porque
+# un directorio descargado no viaja en el build y lib/64/ no existe para él.
+_BIN_DESCARGADO = ENGINES_DIR / "sonata"
+
+
+def sonata_bin_dir():
+    """Carpeta del servidor sonata. El empaquetado (64/sonata) manda si está:
+    viaja con el build, así que siempre es de la misma versión que la app. El
+    descargado (engines/sonata) es para las instalaciones que ya no lo traen."""
+    if (_BIN_EMPAQUETADO / NOMBRE_EXE_SONATA).is_file():
+        return _BIN_EMPAQUETADO
+    return _BIN_DESCARGADO
+
+
+def sonata_instalado():
+    """True si el motor sonata está en el equipo (empaquetado o descargado).
+    Sin él, las voces Piper no pueden sonar: configurar_tts cae en el respaldo
+    SAPI momentáneo y la interfaz ofrece el descargador."""
+    return (sonata_bin_dir() / NOMBRE_EXE_SONATA).is_file()
+
 
 class piperSpeak:
     # Cerrojo del stream BASS. Va en la CLASE, no en la instancia: __init__ se
@@ -90,10 +116,11 @@ class piperSpeak:
         self.pitch = 50  # Tono normal
         self.volume = 100  # Volumen máximo
 
-        # Rutas dinámicas
-        base_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self.bin_dir = base_dir / "64" / "sonata"
-        self.exe = self.bin_dir / "sonata-grpc.exe"
+        # Rutas dinámicas. Se resuelven aquí y no al importar el módulo:
+        # __init__ vuelve a correr en cada reapertura del puente, así que un
+        # motor recién descargado se encuentra sin reiniciar VeTube.
+        self.bin_dir = sonata_bin_dir()
+        self.exe = self.bin_dir / NOMBRE_EXE_SONATA
         self.espeak_dir = self.bin_dir
 
         self.bass_stream = None
