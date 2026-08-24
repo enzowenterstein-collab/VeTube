@@ -55,7 +55,11 @@ _ORFANOS_LIMPIADOS = False
 
 NOMBRE_EXE_SONATA = "sonata-grpc.exe"
 # Carpeta clásica, resuelta respecto a este módulo: en la app compilada cae en
-# lib/64/sonata, y funciona porque el build copia 64/ también a lib/64/.
+# lib/64/sonata. Desde la 3.95 el build YA NO la copia (pyproject enumera 64/
+# archivo por archivo y deja sonata fuera), así que solo existe en dos sitios:
+# el árbol de desarrollo, y las instalaciones anteriores a la 3.95, donde
+# quedó del build viejo (el actualizador no borra nada). En ambos casos manda,
+# porque es de la misma versión que la app que la trajo.
 _BIN_EMPAQUETADO = (
     Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "64" / "sonata"
 )
