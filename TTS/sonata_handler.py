@@ -69,8 +69,10 @@ _BIN_DESCARGADO = ENGINES_DIR / "sonata"
 
 
 def sonata_bin_dir():
-    """Carpeta del servidor sonata. El empaquetado (64/sonata) manda si está:
-    viaja con el build, así que siempre es de la misma versión que la app. El
+    """Carpeta del servidor sonata. El empaquetado (64/sonata) manda si está,
+    pero desde la 3.95 ya no viaja en el build: donde queda es en el árbol de
+    desarrollo y en las instalaciones anteriores, así que es de la versión de
+    la app que lo trajo, no forzosamente de la que está corriendo. El
     descargado (engines/sonata) es para las instalaciones que ya no lo traen."""
     if (_BIN_EMPAQUETADO / NOMBRE_EXE_SONATA).is_file():
         return _BIN_EMPAQUETADO
